@@ -1,5 +1,6 @@
 # GLTF-Viewer
 **3D-Viewer for .dae- and .gltf-files to display rotating or movable parts online**
+![Image](Sensor-Case.gif)
 
 ### EN:
 This "GLTF File Viewer" is designed to display 3D objects in a generally accessible format (with any browser) - similar to how this has long been possible with images, audio files and videos.  
