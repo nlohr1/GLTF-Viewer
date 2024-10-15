@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLTF Viewer</title>
+    <style>
+        body { margin: 0; }
+        h2 { font-family: Arial; font-size: 12pt; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <h2>Datei hochladen (GLTF):</h2>
+    <input type="file" id="modelInput" accept=".gltf,.glb"/>
+    <div id="viewer"></div>
+
+    <!-- Three.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- GLTFLoader -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let currentModel = null;  // Variable zum Speichern des aktuellen Modells
+        let modelCenter = new THREE.Vector3();  // Speichert das Zentrum des Modells
+
+        function init() {
+            // Szene, Kamera und Renderer initialisieren
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('viewer').appendChild(renderer.domElement);
+
+            // Kamera-Position
+            camera.position.set(0, 2, 5);
+
+            // Lichter hinzufügen
+            const light = new THREE.AmbientLight(0x404040); // Weiches Umgebungslicht
+            scene.add(light);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1); // Richtungslicht
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(directionalLight);
+
+            // OrbitControls aktivieren (zum Drehen, Zoomen, Schwenken)
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Dämpfung für sanfte Bewegung
+            controls.dampingFactor = 0.25;
+            controls.screenSpacePanning = false; // Verhindert das Schwenken mit der rechten Maustaste
+            controls.maxPolarAngle = Math.PI;
+            controls.zoomSpeed = 2; // Höhere Zoomgeschwindigkeit
+
+            // Render-Schleife
+            animate();
+
+            // Event-Listener für Tastenkombination [Strg+O]
+            document.addEventListener('keydown', function(event) {
+                if (event.ctrlKey && event.key === 'o') {
+                    event.preventDefault();
+                    document.getElementById('modelInput').click();  // Automatisch das Datei-Upload-Feld öffnen
+                }
+            });
+
+            // Event-Listener für Tastenkombination [Strg+M], um das Modell wieder in die Mitte zu setzen
+            document.addEventListener('keydown', function(event) {
+                if (event.ctrlKey && event.key === 'm') {
+                    event.preventDefault();
+                    resetModelPosition();  // Modell zur Mitte zurücksetzen
+                }
+            });
+
+            // Modell per Drag-and-Drop laden
+            initDragAndDrop();
+
+            // Lade das Modell von der URL, falls ein Parameter übergeben wurde
+            loadModelFromUrlParam();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Funktion zum Laden von GLTF-Modellen und Zentrierung
+        function loadGLTFModel(url) {
+            const loader = new THREE.GLTFLoader();
+            loader.load(url, function (gltf) {
+                const model = gltf.scene;
+
+                // Entferne das aktuelle Modell, falls vorhanden
+                if (currentModel) {
+                    scene.remove(currentModel);
+                }
+
+                // Berechne die Bounding Box des Modells
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+
+                // Speichere das Zentrum des Modells
+                modelCenter.copy(center);
+
+                // Modellzentrum berechnen und verschieben, um das Rotationszentrum anzupassen
+                model.position.sub(center);  // Modellzentrum auf (0, 0, 0) setzen
+
+                // Skalierungsfaktor für GLTF-Modelle
+                const scaleFactor = 20;  // GLTF-Modelle erscheinen zu klein, daher größerer Faktor
+                model.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+                // Positioniere das Modell in der Mitte der Szene
+                box.setFromObject(model); // Aktualisiere die Bounding Box nach der Skalierung
+                box.getCenter(center);
+                model.position.sub(center);
+
+                // Kamera-Target auf das Zentrum des Modells setzen
+                controls.target.copy(modelCenter);
+                camera.lookAt(modelCenter);
+
+                scene.add(model);
+                currentModel = model;  // Speichere das aktuelle Modell
+            }, undefined, function (error) {
+                console.error('An error occurred while loading the GLTF model', error);
+            });
+        }
+
+        // Funktion zum Laden eines Modells, abhängig vom Dateityp
+        function loadModel(file) {
+            const url = URL.createObjectURL(file);
+            const extension = file.name.split('.').pop().toLowerCase();
+
+            if (extension === 'gltf' || extension === 'glb') {
+                loadGLTFModel(url);
+            } else {
+                alert('Ungültiger Dateityp. Bitte lade eine .gltf oder .glb Datei hoch.');
+            }
+        }
+
+        // Funktion zum Laden des Modells von der URL (Parameter)
+        function loadModelFromUrlParam() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileUrl = urlParams.get('file');
+            if (fileUrl) {
+                fetch(fileUrl)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Datei konnte nicht geladen werden.');
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        const file = new File([blob], 'model.gltf', { type: 'application/octet-stream' });
+                        loadModel(file);
+                    })
+                    .catch(error => console.error('Fehler beim Laden des Modells:', error));
+            }
+        }
+
+        // Drag-and-Drop für Modelle aktivieren
+        function initDragAndDrop() {
+            const viewerDiv = document.getElementById('viewer');
+
+            viewerDiv.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'copy';  // Visuelles Feedback beim Ziehen
+            });
+
+            viewerDiv.addEventListener('drop', (event) => {
+                event.preventDefault();
+                const file = event.dataTransfer.files[0];
+                loadModel(file);
+            });
+        }
+
+        // Funktion zum Zurücksetzen des Modells in die Mitte und Anpassung des Rotationszentrums
+        function resetModelPosition() {
+            if (currentModel) {
+                // Berechne erneut die Bounding Box und das Zentrum
+                const box = new THREE.Box3().setFromObject(currentModel);
+                const center = box.getCenter(new THREE.Vector3());
+
+                // Modell in die Mitte verschieben
+                currentModel.position.sub(center);
+
+                // Rotationszentrum aktualisieren
+                modelCenter.copy(center);
+                controls.target.copy(modelCenter);
+                camera.lookAt(modelCenter);
+            }
+        }
+
+        // Event-Listener für Datei-Upload (GLTF)
+        document.getElementById('modelInput').addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            loadModel(file);
+        });
+
+        // Fenstergröße anpassen
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Viewer initialisieren
+        init();
+    </script>
+</body>
+</html>
